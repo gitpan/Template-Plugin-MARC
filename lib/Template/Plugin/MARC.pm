@@ -10,35 +10,35 @@ Template::Plugin::MARC - Template::Toolkit plugin to make MARC friendly
 
 =head1 SYNOPSIS
 
-[% USE record = MARC(mymarc) %] <!-- translate MARC::Record to T::T hash -->
-<h1>[% record.f245.sa %]</h1> <!-- subfield 245$a -->
-[% record.f245.all %] <!-- all subfields concatenated together -->
-[% FOREACH link IN record.f856s %] <!-- process each 856 field -->
-    <a href="whatever/[% link.su %]">[% link.sy %]</a> <!-- create a link on 856$y -->
-[% END %] <!-- /FOREACH link IN record.856s -->
-[% FOREACH contents IN record.f505s %] <!-- process each 505 field -->
-    [% FOREACH subf IN contents.subfields %] <!-- process each subfield -->
-        [% SWITCH subf.code %]
-        [% CASE 'a' %]
-            <span class='contents'>[% subf.value %]</span>
-        [% CASE 't' %]
-            <span class='title'>[% subf.value %]</span>
-        [% CASE 'r' %]
-            <span class='responsibility'>[% subf.value %]</span>
-        [% END %]
-    [% END %] <!-- /FOREACH contents.subfields -->
-[% END %] <!-- /FOREACH contents IN record.f505s -->
-[% FOREACH subj IN record.f6xxs %]
-    <a href="whatever/[% subj.s9 %]">[% subj.sa %]</a> <!-- create a link on 6[0-9]{2}$a -->
-[% END %]
-[% FOREACH field IN record.fields %]
-    [% SWITCH field.tag %]
-    [% CASE '600' %]
-        Subject: [% field.all %] is what we are all about
-    [% CASE '700' %]
-        Co-author: [% field.all %], I presume?
+    [% USE record = MARC(mymarc) %] <!-- translate MARC::Record to T::T hash -->
+    <h1>[% record.f245.sa %]</h1> <!-- subfield 245$a -->
+    [% record.f245.all %] <!-- all subfields concatenated together -->
+    [% FOREACH link IN record.f856s %] <!-- process each 856 field -->
+       <a href="whatever/[% link.su %]">[% link.sy %]</a> <!-- create a link on 856$y -->
+    [% END %] <!-- /FOREACH link IN record.856s -->
+    [% FOREACH contents IN record.f505s %] <!-- process each 505 field -->
+       [% FOREACH subf IN contents.subfields %] <!-- process each subfield -->
+           [% SWITCH subf.code %]
+           [% CASE 'a' %]
+               <span class='contents'>[% subf.value %]</span>
+           [% CASE 't' %]
+               <span class='title'>[% subf.value %]</span>
+           [% CASE 'r' %]
+               <span class='responsibility'>[% subf.value %]</span>
+           [% END %]
+       [% END %] <!-- /FOREACH contents.subfields -->
+    [% END %] <!-- /FOREACH contents IN record.f505s -->
+    [% FOREACH subj IN record.f6xxs %]
+       <a href="whatever/[% subj.s9 %]">[% subj.sa %]</a> <!-- create a link on 6[0-9]{2}$a -->
     [% END %]
-[% END %]
+    [% FOREACH field IN record.fields %]
+       [% SWITCH field.tag %]
+       [% CASE '600' %]
+           Subject: [% field.all %] is what we are all about
+       [% CASE '700' %]
+           Co-author: [% field.all %], I presume?
+       [% END %]
+    [% END %]
 
 =head1 DESCRIPTION
 
@@ -138,8 +138,9 @@ use MARC::Field;
 
 use Template::Plugin;
 use base qw( Template::Plugin );
+use Template::Plugin::MARC::Field;
 
-our $VERSION = '0.01';
+our $VERSION = '0.02';
 
 our $AUTOLOAD;
 
@@ -185,7 +186,7 @@ sub new {
     # marc can be a positional or named argument
     $marc = $config->{'marc'} unless defined $marc;
 
-    bless { 
+    return bless { 
         %$config,
             marc => $marc,
     }, $class;
@@ -268,120 +269,6 @@ sub AUTOLOAD {
 }
 
 1;
-
-=head1 HELPER CLASSES
-
-=cut
-
-package Template::Plugin::MARC::Field;
-
-=head2 Template::Plugin::MARC::Field
-
-Object class to allow nested auto-loading. Not used directly.
-
-=cut
-
-use 5.010000;
-use strict;
-use warnings;
-use MARC::Field;
-
-our $AUTOLOAD;
-
-sub new {
-    my ($class, $field) = @_;
-    my $fieldhash = {
-        'tag' => $field->tag(),
-        'subfields' => [],
-    };
-    if ($field->is_control_field()) {
-        $fieldhash->{'value'} = $field->data();
-            push @{$fieldhash->{'subfields'}}, Template::Plugin::MARC::Subfield->new('@' => $field->data());
-    } else {
-        $fieldhash->{'ind1'} = $field->indicator(1);
-        $fieldhash->{'ind2'} = $field->indicator(2);
-        my @subfields = $field->subfields();
-        foreach my $subf (@subfields) {
-            $fieldhash->{"s$subf->[0]"} = $subf->[1] unless $fieldhash->{"s$subf->[0]"};
-            $fieldhash->{'all'} .= ' ' if $fieldhash->{'all'};
-            $fieldhash->{'all'} .= $subf->[1];
-            push @{$fieldhash->{'subfields'}}, Template::Plugin::MARC::Subfield->new($subf->[0] => $subf->[1]);
-        }
-    }
-
-    bless $fieldhash, $class;
-}
-
-sub has {
-    my ($self, $selector, $match) = @_;
-
-    unless ($selector eq 'ind1' || $selector eq 'ind2' || $selector eq 'tag') {
-        $selector = "s$selector"; # Everything else is a subfield
-    }
-
-    return $self->{$selector} eq $match if (defined $self->{$selector} && defined $match);
-    return defined $self->{$selector};
-}
-
-sub filter {
-    my ($self, $selectors) = @_;
-
-    my $result = '';
-    foreach my $selector (keys %$selectors) {
-        if ($selector eq 'code') {
-            foreach my $subf (@{$self->{'subfields'}}) {
-                if (index($selectors->{$selector}, $subf->code) >= 0) {
-                    $result .= ' ' if $result;
-                    $result .= $subf->value;
-                }
-            }
-        }
-    }
-    return $result;
-}
-
-sub AUTOLOAD {
-    my $self = shift;
-    (my $a = $AUTOLOAD) =~ s/.*:://;
-
-    return $self->{"$a"};
-}
-
-1;
-
-package Template::Plugin::MARC::Subfield;
-
-=head2 Template::Plugin::MARC::Subfield
-
-Object class to allow nested auto-loading. Not used directly.
-
-=cut
-
-
-use 5.010000;
-use strict;
-use warnings;
-
-sub new {
-    my ($class, $code, $value) = @_;
-
-    bless {
-        code => $code,
-        value => $value,
-    }, $class;
-}
-
-sub code {
-    my $self = shift;
-    return $self->{'code'};
-}
-
-sub value {
-    my $self = shift;
-    return $self->{'value'};
-}
-
-1;
 __END__
 
 =head1 SEE ALSO
@@ -396,9 +283,17 @@ Jared Camins-Esakov, C & P Bibliography Services <jcamins@cpbibliography.com>
 
 Copyright (C) 2012 by C & P Bibliography Services
 
-This library is free software; you can redistribute it and/or modify
-it under the same terms as Perl itself, either Perl version 5.14.2 or,
-at your option, any later version of Perl 5 you may have available.
+Template::Plugin::MARC is free software: you can redistribute it and/or
+modify it under the terms of the GNU General Public License as published
+by the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
 
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <http://www.gnu.org/licenses/>.  
 
 =cut
